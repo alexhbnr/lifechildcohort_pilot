@@ -1,0 +1,13 @@
+name: Renv
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base=4.4
+  - r-r.utils
+  - r-data.table
+  - r-tidyverse
+  - r-patchwork
+  - bioconductor-phyloseq
+  - bioconductor-curatedmetagenomicdata
+  - bioconductor-mia

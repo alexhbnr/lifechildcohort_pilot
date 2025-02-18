@@ -12,3 +12,5 @@ this project.
 
 - `COMP_taxprofiling.Snakefile`: taxonomically profile the plaque samples and blanks with Kraken2
   and MetaPhlAn4 using nf-core/taxprofiler
+- `COMP_MetaPhlAn3_curatedMetagenomicData.Snakefile`: merge the MetaPhlAn3 taxonomic profiles of the
+  pilot samples with the HMP oral cavity samples from the curatedMetagenomicData R package

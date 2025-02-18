@@ -15,3 +15,8 @@ This folder contains the results of the analyses of this project.
     pilot samples obtained from Kraken2 with a NCBI RefSeq databases containing microbes
   - `COMP_TaxProfiler_MetaPhlAnv4_Jun23_pilot.tsv`: the taxonomic profiles of the pilot samples
     obtained from MetaPhlAn with its database v4 from June 2023
+  - `COMP_MetaPhlAn3_pilot_HMP2012subgplaque.tsv`: the taxonomic profiles of the pilot samples and
+    the subgingival plaque samples obtained from MetaPhlAn with its database v3 from January 2019
+  - `COMP_MetaPhlAn3_pilot_HMP2012_phyloSeq.RData`: a phyloSeq object of the pilot samples and the
+    HMP samples from the oral sites subgingival plaque, supragingival plaque, buccal mucosa, and
+    tongue dorsum obtained from MetaPhlAn with its database v3 from January 2019
