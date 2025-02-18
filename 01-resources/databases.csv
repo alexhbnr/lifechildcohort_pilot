@@ -1,0 +1,3 @@
+tool,db_name,db_params,db_type,db_path
+kraken2,k2_ncbirefseq_universal_240912,,short,/mnt/ramdisk/k2_ncbirefseq_universal_240912
+metaphlan,metaphlanv4_Oct22,,short,/mnt/archgen/users/huebner/refdbs/metaphlan/mpa_vJun23_CHOCOPhlAnSGB_202403
