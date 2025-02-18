@@ -20,3 +20,8 @@ This folder contains the results of the analyses of this project.
   - `COMP_MetaPhlAn3_pilot_HMP2012_phyloSeq.RData`: a phyloSeq object of the pilot samples and the
     HMP samples from the oral sites subgingival plaque, supragingival plaque, buccal mucosa, and
     tongue dorsum obtained from MetaPhlAn with its database v3 from January 2019
+
+### `STRA`: results of the strain analysis
+
+  - `STRA_pilot_strains_sitefreqspectrum.tsv`: the site frequency spectra of the high-quality,
+    bi-allelic SNPs for the top 3 most abundant species (order of samples: LLP003, LLP002, LLP001)

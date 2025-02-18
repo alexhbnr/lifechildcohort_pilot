@@ -14,3 +14,7 @@ this project.
   and MetaPhlAn4 using nf-core/taxprofiler
 - `COMP_MetaPhlAn3_curatedMetagenomicData.Snakefile`: merge the MetaPhlAn3 taxonomic profiles of the
   pilot samples with the HMP oral cavity samples from the curatedMetagenomicData R package
+
+### `STRA`: strain analysis
+
+- `STRA_pilot_top3_strains.Snakefile`: strain analysis of the top 3 most abundant species
