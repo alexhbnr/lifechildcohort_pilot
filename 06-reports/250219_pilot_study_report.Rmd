@@ -1,0 +1,464 @@
+---
+title: "Summary of the LIFE child cohort pilot study"
+author: "Alexander Hübner"
+date: "`r format(Sys.time(), '%b %d, %Y')`"
+output:
+    pdf_document:
+        fig_width: 8
+        fig_height: 6
+---
+
+```{r libraries, echo=F}
+library(knitr)
+library(rmarkdown)
+library(phyloseq)
+library(data.table)
+library(tidyverse)
+library(pander)
+library(patchwork)
+library(ggrepel)
+opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, dpi = 150)
+theme_set(theme_classic(base_size = 10))
+```
+
+```{r load_data}
+# Sample overview
+samples <- fread("../01-resources/overview_pilot_batch.tsv")
+# Sequencing information
+nreads <- fread("../05-results/PREP_seqdata_processing_nReads_pilot.tsv")
+# Host DNA saliva samples from the Amazonas
+amaz_hostdna <- fread("../01-resources/amazonian_saliva_samples_hostDNA.tsv")
+# MetaPhlAn4 results
+mp4 <- fread("../05-results/COMP_TaxProfiler_MetaPhlAnv4_Jun23_pilot.tsv")
+# MetaPhlAn3 results merged with the HMP data set
+mp3 <- load("../05-results/COMP_MetaPhlAn3_pilot_HMP2012_phyloSeq.RData")
+# Strain analysis
+strain <- fread("../05-results/STRA_pilot_strains_sitefreqspectrum.tsv",
+                colClasses = c("pattern"="character"))
+```
+
+This report summarises the results of the initial sequencing of three supragingival plaque samples
+and an unused dental swab (Table 1). The three plaque samples comprise a child from the LIFE
+child cohort sample (LLP001.A) and a mother-child pair (LLP002.A and LLP003.A). The second child is
+matched in age and sex with the child from the LIFE child cohort.
+
+**Table 1**: **Overview of the samples.**
+
+```{r sample_table, results="asis"}
+filter(samples, str_detect(sample_id, "LLP")) |>
+select(`Pandora ID` = sample_id,
+       `Sample ID` = external_sample_id,
+       `additional information` = notes) |>
+mutate(`Sample ID` = str_replace(`Sample ID`, " \\(LC[0-9]\\?\\)", "")) |>
+(\(x) pandoc.table(x, split.tables = Inf, split.cells = 30))()
+```
+
+All samples were extracted with the Qiagen PowerSoil kit and 250 ng of DNA were sheared to a mean
+DNA molecule length of 500 bp prior to building Illumina sequencing libraries using an in-house
+protocol for double-stranded DNA. The samples were pooled and sequenced across eight lanes of an
+Illumina NovaSeq X paired-end sequencing run with nominal length of 2x 150 bp.
+
+## Overview of the sequencing results
+
+After the initial sequencing, adapter sequences were trimmed from the sequencing data and the
+trimmed sequences were evaluated for their quality. Low quality reads were discarded (Figure
+1a), while the remainder of the sequences were aligned against the telomere-to-telomere assembly
+of the human reference genome, _T2T-CHM13v2.0_. 
+
+```{r seqinfo}
+seqinfo <- nreads |>
+  filter(str_sub(sample, 1, 3) == "LLP") |>
+  mutate(host_reads = final_reads - non_host_reads,
+         discarded_reads = raw_reads - final_reads) |>
+  select(sample, discarded_reads, host_reads, non_host_reads, raw_reads) |>
+  pivot_longer(-c(sample, raw_reads), names_to = "read_type", values_to = "nReads") |>
+  mutate(frac = nReads / raw_reads,
+         read_type = recode(read_type,
+                            `discarded_reads` = "discarded",
+                            `host_reads` = "host DNA",
+                            `non_host_reads` = "other"),
+         read_type = factor(read_type, levels = c("discarded", "host DNA", "other")),
+         sample = factor(sample, levels = unique(sample)))
+
+# Panel A: overview of fraction of host and non-host DNA
+seqinfo_panela <- seqinfo |>
+  ggplot(aes(x = fct_rev(sample), y = frac, group = sample)) +
+  geom_col(aes(fill = read_type)) +
+  coord_flip() +
+  labs(y = "fraction of sequencing data") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_manual(values = c("#636e72", "#dfe6e9", "#ff7675")) +
+  theme(
+    legend.position = "top",
+    legend.title = element_blank(),
+    axis.title.y = element_blank(),
+    axis.line = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+# Panel B: comparison of host DNA fraction to saliva samples from the Amazonas
+seqinfo_panelb <- bind_rows(
+    amaz_hostdna |>
+      mutate(frac = host_reads / total_reads,
+             sample_type = "saliva") |>
+      select(sample, sample_type, frac),
+    seqinfo |>
+      filter(read_type == "host DNA",
+             sample %in% c("LLP001.A0101", "LLP002.A0101", "LLP003.A0101")) |>
+      mutate(sample_type = "plaque") |>
+      select(sample, sample_type, frac)
+) |>
+mutate(sample_type = factor(sample_type, levels = c("plaque", "saliva"))) |>
+ggplot(aes(x = sample_type, y = frac, group = sample_type)) +
+geom_boxplot(outlier.shape = NA) +
+geom_jitter(aes(fill = sample_type), shape = 21, width = .25, size = 2.5) +
+labs(y = "fraction of host DNA") +
+scale_y_continuous(labels = scales::percent_format(),
+                   limits = c(0, 1)) +
+theme(
+  legend.position = "none",
+  axis.title.x = element_blank(),
+  axis.ticks.x = element_blank(),
+  axis.line = element_blank(),
+  panel.grid.major.y = element_line(linewidth = 0.5,
+        colour = "grey50",
+        linetype = 3)
+    )
+
+seqinfo_panela + seqinfo_panelb +
+plot_annotation(tag_levels = "a")
+```
+
+**Figure 1**: **Overview of the origin of the sequencing data**. **a** Fraction of reads that were
+either discarded due to low quality or were identified as host DNA. **b** Comparison of the fraction
+of host DNA between the plaque samples and saliva samples from individuals from the Amazonas region
+in South America.
+
+From the four samples, the blank dental swap (_LLP004.A0101_) had the highest fraction of discarded
+sequences (Figure 1a). This is expected because, due to its low biomass, a higher fraction of
+sequencing artefacts, such as adapter dimers, is generated during the library preparation. For the
+actual plaque samples, the fraction of discarded sequences is about 10% - this order of magnitude is
+regularly observed in other biological samples, too.
+
+The amount of host DNA varied quite substantially across the plaque samples spanning from 18% to
+74% (Figure 1a). These values are quite high compared to matured oral biofilm. However, when
+comparing these samples against saliva samples from individuals from the Amazonas basin in South
+America (Figure 1b), the plaque samples fell within the lower end of the fraction of host DNA
+distribution of the saliva samples. Only sample _LLP003.A0101_ fell within the interquartile
+distribution of the saliva samples indicating that this sample had a particularly high proportion of
+host DNA.
+
+As there is no ethical approval to study the host DNA, it would make sense to think about laboratory
+strategies to reduce the fraction of host DNA prior to building the sequencing libraries, e.g. by
+removing the host DNA via a spin column. The amount of sequencing data available for
+microbiome-related analyses was higher than 50 million sequences, which is commonly found in other
+microbial studies, for two out of three samples (Table 2).
+
+**Table 2**: **Number of sequences available for microbial DNA analyses.**
+
+```{r tbl_nonhost, results="asis"}
+seqinfo |>
+filter(read_type == "other", sample != "LLP004.A0101") |>
+mutate(`non-host sequences [million]` = nReads / 1e6) |>
+select(sample, `non-host sequences [million]`) |>
+(\(x) pandoc.table(x, split.tables = Inf,
+                   round = 1,
+                   keep.trailing.zeros = TRUE))()
+```
+
+## Analysis of the microbial DNA
+
+After discarding the host DNA, I inferred which microbial species are present in the plaque samples
+and laboratory controls by taxonomically profiling it with the program MetaPhlAn. MetaPhlAn uses a
+catalogue of marker genes that are identified from many microbial species that are present in
+human-associated microbiome samples. Because it uses a subset of high-quality microbial genomes that
+are human-associated, it reduces the risk for false positive and false negative species assignment
+and returns accurate taxonomic profiles.
+
+First, I investigated how many microbial species were present in each sample (Figure 2).
+
+```{r alpha_diversity, fig.height=3}
+mp4_lt <- mp4 |>
+  pivot_longer(-clade_name, names_to = "sample", values_to = "relab") |>
+  mutate(taxon = str_extract(clade_name, "s__.+$"))
+
+n_obs_species <- mp4_lt |>
+  select(-clade_name) |>
+  summarise(n = sum(relab > 0), .by = sample) |>
+  mutate(sample_type = case_when(
+    str_sub(sample, 1, 3) == "EXB" ~ "extraction blank",
+    str_sub(sample, 1, 3) == "LIB" ~ "library blank",
+    sample == "LLP004.A0101" ~ "swab blank",
+    .default = "plaque"
+    ))
+
+n_obs_species |>
+mutate(sample_type = factor(sample_type, levels = c("plaque", "swab blank",
+                                                    "extraction blank",
+                                                    "library blank"))) |>
+ggplot(aes(x = 1, y = n)) +
+geom_jitter(aes(fill = sample_type), shape = 21, size = 3, width = .25) +
+geom_hline(yintercept = 50, linetype = 1, linewidth = 0.5, colour = "red") +
+geom_text_repel(data = filter(n_obs_species,
+                              sample %in% c("LLP001.A0101", "LLP002.A0101", "LLP003.A0101")),
+               aes(label = sample)) +
+coord_flip() +
+labs(y = "number of observed species") +
+theme(
+  legend.position = "top",
+  legend.title = element_blank(),
+  axis.title.y = element_blank(),
+  axis.text.y = element_blank(),
+  axis.line = element_blank(),
+  axis.ticks = element_blank(),
+  panel.grid.major.x = element_line(colour = "grey50",
+                                    linetype = 3, linewidth = 0.5)
+)
+```
+
+**Figure 2**: **The number of observed taxa inferred from MetaPhlAn v4.**
+
+Across the samples, the three plaque samples had by far the highest number of observed species,
+while the blank samples had much lower numbers (Figure 2). This is expected as blank samples
+should have a low biomass compared to the true biological samples. Among the three samples, the
+sample with the highest number of non-host DNA (Figure 1a), _LLP001.A0101_, also had the highest
+number of observed species, however, this trend was not confirmed by the other two plaque samples.
+
+Next to having a higher number of species, the most abundant species of the plaque samples strongly
+differed from the species that were most abundant in the blank samples (Figure 3). Only a single
+species, _Neisseria sicca_, which was present in a single extraction blank sample, was shared within
+the top 20 most abundant species between the plaque samples and the blank samples (Figure 3a).
+
+```{r most_abundant_species}
+mas_per_type <- mp4_lt |>
+  mutate(sampletype = if_else(str_sub(sample, 1, 6) %in% c("LLP001", "LLP002", "LLP003"),
+                              "plaque", "blank")) |>
+  summarise(meanRelAb = mean(relab),
+            .by = c(sampletype, taxon))
+mas_plaque <- mas_per_type |>
+  filter(sampletype == "plaque") |>
+  arrange(desc(meanRelAb)) |>
+  head(20) |>
+  pull(taxon)
+mas_blank <- mas_per_type |>
+  filter(sampletype == "blank", taxon != "s__Neisseria_sicca") |>
+  arrange(desc(meanRelAb)) |>
+  head(20) |>
+  pull(taxon)
+
+mas_panel_a <- mp4_lt |>
+  filter(taxon %in% mas_plaque) |>
+  mutate(relab = relab / 100,
+         family = str_extract(clade_name, "f__[A-Za-z0-9]+"),
+         taxon = factor(taxon, levels = mas_plaque),
+         sampletype = if_else(str_sub(sample, 1, 6) %in% c("LLP001", "LLP002", "LLP003"),
+                              "plaque", "blank"),
+         sampletype = factor(sampletype, levels = c("blank", "plaque"))
+      ) |>
+  arrange(sampletype, desc(sample)) |>
+  (\(x) mutate(x, sample = factor(sample, levels = unique(x$sample))))() |>
+  arrange(taxon) |>
+  ggplot(aes(x = sample, y = relab, group = sample)) +
+  geom_col(aes(fill = taxon)) +
+  coord_flip() +
+  labs(y = "relative abundance",
+       fill = "top 20 plaque species") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme(
+    legend.text = element_text(size = 8),
+    axis.title.y = element_blank(),
+    axis.ticks = element_blank(),
+    axis.line = element_blank(),
+    panel.grid.major.x = element_line(linewidth = 0.5, linetype = 3, colour = "grey50")
+      ) +
+  guides(fill = guide_legend(ncol = 2))
+
+mas_panel_b <- mp4_lt |>
+  filter(taxon %in% mas_blank) |>
+  mutate(relab = relab / 100,
+         family = str_extract(clade_name, "f__[A-Za-z0-9]+"),
+         taxon = factor(taxon, levels = mas_blank),
+         sampletype = if_else(str_sub(sample, 1, 6) %in% c("LLP001", "LLP002", "LLP003"),
+                              "plaque", "blank"),
+         sampletype = factor(sampletype, levels = c("blank", "plaque"))
+      ) |>
+  arrange(sampletype, desc(sample)) |>
+  (\(x) mutate(x, sample = factor(sample, levels = unique(x$sample))))() |>
+  arrange(taxon) |>
+  ggplot(aes(x = sample, y = relab, group = sample)) +
+  geom_col(aes(fill = taxon)) +
+  coord_flip() +
+  labs(y = "relative abundance",
+       fill = "top 20 blank species") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme(
+    legend.text = element_text(size = 8),
+    axis.title.y = element_blank(),
+    axis.ticks = element_blank(),
+    axis.line = element_blank(),
+    panel.grid.major.x = element_line(linewidth = 0.5, linetype = 3, colour = "grey50")
+      ) +
+  guides(fill = guide_legend(ncol = 2))
+
+mas_panel_a + mas_panel_b +
+plot_layout(nrow = 2) +
+plot_annotation(tag_levels = "a")
+```
+
+**Figure 3**: **Overview of the top 20 most abundant species that were either found in the plaque or
+the blank samples.**
+
+The top 20 most abundant species in the plaque samples are strongly dominated by species associated
+with human oral microbiome (Figure 3a). In contrast, the blank swab sample, _LLP004.A0101_, was
+dominated by _Brucella intermedia_ and _Burkholderia multivorans_ (Figure 3b). Neither species
+is associated with the human oral microbiome but have been isolated as opportunistic pathogens,
+suggesting that these are primarily found in the environment. For the remaining extraction and
+library blank samples, some of these were contaminated with bacteria associated with the human gut
+microbiome. As the plaque samples were co-extracted alongside FTA cards containing human stool
+samples, this is expected.
+
+Although these results combined strongly support the plaque samples were true oral microbiome
+samples, there is still the open question whether our wet lab analysis protocols would have
+introduced a systematic bias compared to the microbial profiles of published oral microbiome
+samples. To answer this question, I compared the taxonomic profiles of the three plaque samples and
+the empty swab to the profiles of the human oral microbiome samples of the Human Microbiome Project
+(HMP; Figure 4). I compared the plaque samples against four different sample types available in
+the Human Microbiome Project: supragingival plaque, subgingival plaque, buccal mucosa, and tongue
+dorsum.
+
+```{r pcoa}
+phy <- prune_samples(as.logical(!(as(sample_data(phy), "data.frame")$sample_type %in%
+                                  c("extraction blank", "library blank"))), phy)
+sample_data(phy) <- as(sample_data(phy), "data.frame") |>
+  mutate(sample_type = if_else(sample == "LLP004.A0101", "blank swab", sample_type),
+         sample_type = factor(sample_type, levels = c("LIFE Child cohort plaque",
+                                                      "HMP supragingival plaque",
+                                                      "HMP subgingival plaque",
+                                                      "HMP buccal mucosa",
+                                                      "HMP tongue dorsum",
+                                                      "blank swab"))) |>
+  sample_data()
+  
+bray_dist <- ordinate(phy, "PCoA", "bray")
+
+ord_df <- bray_dist$vectors[, 1:2] |>
+  as.data.frame() |>
+  rownames_to_column(var = "sample") |>
+  rename(PC1 = Axis.1, PC2 = Axis.2) |>
+  as_tibble() |>
+  left_join(as(sample_data(phy), "data.frame") |>
+            select(sample, sample_type),
+            by = "sample") |>
+  mutate(study = if_else(sample_type == "LIFE Child cohort plaque", "this study", "HMP"))
+
+ord_df |>
+  ggplot(aes(x = PC1, y = PC2)) +
+  geom_point(aes(fill = sample_type, size = study, alpha = study),
+                 shape = 21) +
+  labs(x = str_c("PC1", ": ", round(bray_dist$values$Eigenvalues[1], 1), "%"),
+       y = str_c("PC2", ": ", round(bray_dist$values$Eigenvalues[2], 1), "%"),
+       fill = "") +
+  scale_fill_manual(values = c("#c23616", "#e1b12c", "#22a6b3", "#6ab04c", "#7f8fa6", "#e056fd")) +
+  scale_size_manual(values = c(2, 4)) +
+  scale_alpha_manual(values = c(0.8, 1)) +
+  theme(
+    legend.position = "top"
+  ) +
+  guides(fill = guide_legend(override.aes = list(pch = 21, size = 4), nrow = 2),
+         alpha = "none",
+         size = "none")
+```
+
+**Figure 4**: **Principal component analysis of the LIFE Child cohort plaque samples with the HMP
+oral microbiome samples.** The underlying dissimilarity metric is Bray-Curtis.
+
+For the comparison, I performed a beta diversity analysis based on Bray-Curtis dissimilarity. Each
+pair of samples is compared and their difference in species composition is recorded. The matrix of
+pairwise dissimilarity scores is then used as the input in a Principal Coordinate Analysis (PCoA).
+
+The three plaque samples clustered with the other supragingival and subgingival plaque samples from
+the HMP, highlighting that our wet lab protocol did not introduce a systematic bias. This cluster of
+plaque samples was distinct from the cluster of buccal mucosa and the cluster of tongue dorsum
+samples. The blank swab sample did not cluster with any microbiome sample but fell in the origin of
+the PCoA plot.
+
+In summary, this result highlighted that the applied wet lab protocols did not introduce a
+systematic bias but that we generated high-quality microbial sequencing data that allows us to
+compare the plaque samples with each other but also with published oral microbiome samples.
+
+## Strain sharing between individuals
+
+Our sample set of three comprises a mother-child pair and one individual child. Such a setup allows
+asking whether the strains observed in the mother-child pair are genetically more closely to each
+other than they are to the unrelated child? Previous work on strain sharing in the oral microbiome
+has shown that although not very microbial species is vertically transmitted, there is plenty of
+evidence for it.
+
+The ability of detecting strain sharing is dependent on whether there are sufficient amounts of
+genetic information in each sample. In the case that we are not able to reconstruct the genome for
+one of the three samples, then we are also not able to investigate the strain sharing across the
+samples. Therefore, I calculated the median relative abundance of all microbial species across the
+three plaque samples and selected the top three species: _Neisseria sicca_, _Lautropia mirabilis_,
+and _Streptococcus oralis_. 
+
+I downloaded the species representative genome for each species from NCBI Genomes and aligned the
+short-read sequencing data of each sample against the reference genomes. After the sequence
+alignment, I jointly called genotypes across the three samples for each species using freeBayes. I
+filtered the inferred genotypes and only kept them when the genotype quality was greater than 30,
+there was genotype information for all samples, and when the site had only two alleles (bi-allelic;
+**Table 3).
+
+**Table 3**: **The number of sites per species for which a pair of samples share a variant.**
+
+```{r strain_analysis, results="asis"}
+n_snps <- strain |>
+  summarise(total = sum(count), .by = species)
+
+strain |>
+mutate(sharers = case_when(
+         pattern %in% c("001", "110") ~ "LLP002 & LLP003",
+         pattern %in% c("011", "100") ~ "LLP001 & LLP002",
+         pattern %in% c("010", "101") ~ "LLP001 & LLP003",
+        .default = "non\ninformative"
+    ),
+    species = recode(species, `Nsicca` = "N. sicca",
+                     `Lmirabilis` = "L. mirabilis",
+                     `Soralis` = "S. oralis")) |>
+summarise(count = sum(count), .by = c(species, sharers)) |>
+filter(sharers != "non\ninformative") |>
+pivot_wider(names_from = "sharers", values_from = "count") |>
+(\(x) pandoc.table(x, big.mark = ",", split.tables = Inf))()
+```
+
+This filtering scheme left me with between `r format(min(n_snps$total), big.mark = ",")` and 
+`r format(max(n_snps$total), big.mark = ",")` variants for each species. I grouped the variants in
+three bins dependent which two samples shared a variant and were different from the third sample
+(Table 3).
+
+From the three species, we only observed an excess of shared variants between the mother (LLP002)
+and her child (LLP003) for _N. sicca_. Here, the pair shared three times more variants with each
+other than either of them shared with the unrelated child (LLP001). In contrast, for the species
+_L. mirabilis_ and _S. oralis_, the two children shared many more variants with each other than the
+mother-child pair. This highlights the reported issues of vertical transmission of strains from
+mother to their children and its stability through the lifetime of their offspring.
+
+## Conclusion
+
+In this pilot experiment, we extracted DNA from three supragingival plaque samples, converted it
+into sequencing libraries and sequenced them deeply. After initial processing for sequence quality,
+we obtained between 34 and 173 million microbial sequences for the plaque samples. The huge
+variation across the plaque samples can be explained by the difference in the fraction of host DNA,
+and it might be worth to consider methods to reduce the amount of host DNA prior to the sequencing.
+
+Taxonomic profiling of the plaque samples showed that the plaque samples had many more microbial
+species than the accompanying blanks and that the species strongly differed between them. A
+comparison of taxonomic profiles of the plaque samples to previously published human oral microbiome
+samples from the Human Microbiome Project revealed that the plaque samples clustered with other
+plaque samples distinctly from other oral cavity samples, such as buccal mucosa or tongue dorsum.
+Therefore, the applied wet lab protocols did not introduce a systematic bias compared to previously
+published samples.
+
+An initial investigation on whether strain sharing between the mother-child pair was frequently
+observed revealed that only for one of the three tested species, _N. sicca_, there was an excess of
+variants shared between the mother-child pair. For the species _L. mirabilis_ and _S. oralis_, the
+two children shared more variants with each other than the mother and her offspring.

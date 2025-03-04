@@ -2,6 +2,8 @@
 
 This folder contains files that are unchangeable resources for the analyses of this project.
 
+- `amazonian_saliva_samples_hostDNA.tsv`: fraction of host DNA in a set of Amazonian saliva samples
+  collected by Leonardo Arias
 - `databases.csv`: database input table for running Kraken2 and MetaPhlAn4 using nf-core/taxprofiler
 - `hmp2012_curatedMetagenomicData_tissues.tsv`: the information which tissue was samples for each
   entry in the curatedMetagenomicData dataset of the HMP samples
